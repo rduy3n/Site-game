@@ -1,0 +1,393 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: deny everything by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (
+          'email_verified' in request.auth.token &&
+          request.auth.token.email_verified == true &&
+          'email' in request.auth.token &&
+          request.auth.token.email == 'yanisscaboulin@gmail.com'
+        ) ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRoomCode(code) {
+      return code is string && code.size() == 6 && code.matches('^[A-Z0-9]{6}$');
+    }
+
+    function isValidProfile(data) {
+      return data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40 &&
+             data.favoriteFighterId is string && data.favoriteFighterId.size() >= 1 && data.favoriteFighterId.size() <= 40 &&
+             data.wins is int && data.wins >= 0 && data.wins <= 1000000 &&
+             data.losses is int && data.losses >= 0 && data.losses <= 1000000 &&
+             (!('winStreak' in data) || (data.winStreak is int && data.winStreak >= 0 && data.winStreak <= 1000000)) &&
+             (!('bestStreak' in data) || (data.bestStreak is int && data.bestStreak >= 0 && data.bestStreak <= 1000000)) &&
+             (!('totalDamageDealt' in data) || (data.totalDamageDealt is int && data.totalDamageDealt >= 0 && data.totalDamageDealt <= 1000000000)) &&
+             (!('roundsWonTotal' in data) || (data.roundsWonTotal is int && data.roundsWonTotal >= 0 && data.roundsWonTotal <= 10000000)) &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMatchHistory(data) {
+      return data.mode in ['VS_BOT', 'ONLINE', 'TOURNAMENT'] &&
+             data.myFighterId is string && data.myFighterId.size() >= 1 && data.myFighterId.size() <= 40 &&
+             data.opponentFighterId is string && data.opponentFighterId.size() >= 1 && data.opponentFighterId.size() <= 40 &&
+             data.opponentName is string && data.opponentName.size() >= 1 && data.opponentName.size() <= 40 &&
+             data.stageId is string && data.stageId.size() >= 1 && data.stageId.size() <= 40 &&
+             data.myRoundsWon is int && data.myRoundsWon >= 0 && data.myRoundsWon <= 5 &&
+             data.opponentRoundsWon is int && data.opponentRoundsWon >= 0 && data.opponentRoundsWon <= 5 &&
+             data.damageDealt is int && data.damageDealt >= 0 && data.damageDealt <= 100000 &&
+             data.won is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidMatchRoom(data) {
+      return isValidRoomCode(data.roomCode) &&
+             data.hostId is string && data.hostId.size() >= 1 && data.hostId.size() <= 128 &&
+             data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 40 &&
+             data.guestId is string && data.guestId.size() <= 128 &&
+             data.guestName is string && data.guestName.size() <= 40 &&
+             data.participantIds is list && data.participantIds.size() >= 1 && data.participantIds.size() <= 2 &&
+             data.participantIds[0] is string &&
+             data.status in ['waiting', 'selecting', 'fighting', 'finished'] &&
+             data.stageId is string && data.stageId.size() >= 1 && data.stageId.size() <= 40 &&
+             data.hostFighterId is string && data.hostFighterId.size() >= 1 && data.hostFighterId.size() <= 40 &&
+             data.guestFighterId is string && data.guestFighterId.size() >= 1 && data.guestFighterId.size() <= 40 &&
+             data.hostReady is bool &&
+             data.guestReady is bool &&
+             data.roundNumber is int && data.roundNumber >= 1 && data.roundNumber <= 5 &&
+             data.p1RoundsWon is int && data.p1RoundsWon >= 0 && data.p1RoundsWon <= 3 &&
+             data.p2RoundsWon is int && data.p2RoundsWon >= 0 && data.p2RoundsWon <= 3 &&
+             data.winnerSide in ['none', 'p1', 'p2'] &&
+             data.p1X is number && data.p1X >= 0.0 && data.p1X <= 1.0 &&
+             data.p1Y is number && data.p1Y >= 0.0 && data.p1Y <= 1.0 &&
+             data.p1Facing in [-1, 1] &&
+             data.p1Action is string && data.p1Action.size() >= 1 && data.p1Action.size() <= 30 &&
+             data.p1ActionSeq is int && data.p1ActionSeq >= 0 &&
+             data.p1Blocking is bool &&
+             data.p1Ulti is int && data.p1Ulti >= 0 && data.p1Ulti <= 100 &&
+             data.p1DealtDmg is int && data.p1DealtDmg >= 0 && data.p1DealtDmg <= 5000 &&
+             data.p2X is number && data.p2X >= 0.0 && data.p2X <= 1.0 &&
+             data.p2Y is number && data.p2Y >= 0.0 && data.p2Y <= 1.0 &&
+             data.p2Facing in [-1, 1] &&
+             data.p2Action is string && data.p2Action.size() >= 1 && data.p2Action.size() <= 30 &&
+             data.p2ActionSeq is int && data.p2ActionSeq >= 0 &&
+             data.p2Blocking is bool &&
+             data.p2Ulti is int && data.p2Ulti >= 0 && data.p2Ulti <= 100 &&
+             data.p2DealtDmg is int && data.p2DealtDmg >= 0 && data.p2DealtDmg <= 5000 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidFeedback(data) {
+      return data.authorId is string && data.authorId.size() >= 1 && data.authorId.size() <= 128 &&
+             data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 40 &&
+             data.modeTested in ['IRL', 'En ligne', 'Vs Bot', 'Entraînement'] &&
+             data.category in ['Équilibrage', 'Graphismes', 'Contrôles', 'Bug', 'Idée'] &&
+             data.fighterId is string && data.fighterId.size() >= 1 && data.fighterId.size() <= 40 &&
+             data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+             data.comment is string && data.comment.size() >= 3 && data.comment.size() <= 400 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    match /admins/{adminId} {
+      allow get: if isSignedIn() && isValidId(adminId) && request.auth.uid == adminId;
+      allow list, write: if false;
+    }
+
+    match /users/{userId} {
+      allow get, list: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidId(userId) &&
+                       request.auth.uid == userId &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'displayName', 'favoriteFighterId', 'wins', 'losses', 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'favoriteFighterId', 'wins', 'losses',
+                         'winStreak', 'bestStreak', 'totalDamageDealt', 'roundsWonTotal',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidProfile(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(userId) &&
+                       (request.auth.uid == userId || isAdmin()) &&
+                       isValidProfile(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'favoriteFighterId', 'wins', 'losses',
+                         'winStreak', 'bestStreak', 'totalDamageDealt', 'roundsWonTotal',
+                         'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+
+      match /match_history/{matchId} {
+        allow get: if isSignedIn() && isValidId(userId) && isValidId(matchId) && (request.auth.uid == userId || isAdmin());
+        allow list: if isSignedIn() && isValidId(userId) && (request.auth.uid == userId || isAdmin());
+
+        allow create: if isSignedIn() &&
+                         isValidId(userId) &&
+                         isValidId(matchId) &&
+                         request.auth.uid == userId &&
+                         incoming().keys().hasAll([
+                           'mode', 'myFighterId', 'opponentFighterId', 'opponentName', 'stageId',
+                           'myRoundsWon', 'opponentRoundsWon', 'damageDealt', 'won', 'createdAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'mode', 'myFighterId', 'opponentFighterId', 'opponentName', 'stageId',
+                           'myRoundsWon', 'opponentRoundsWon', 'damageDealt', 'won', 'createdAt'
+                         ]) &&
+                         isValidMatchHistory(incoming());
+
+        allow update: if false;
+
+        allow delete: if isSignedIn() && isValidId(userId) && isValidId(matchId) && (request.auth.uid == userId || isAdmin());
+      }
+    }
+
+    function isValidCombatReset(after) {
+      return after.roundNumber == 1 &&
+             after.p1RoundsWon == 0 &&
+             after.p2RoundsWon == 0 &&
+             after.winnerSide == 'none' &&
+             after.p1DealtDmg == 0 &&
+             after.p2DealtDmg == 0 &&
+             after.p1Action == 'idle' &&
+             after.p2Action == 'idle' &&
+             after.p1ActionSeq == 0 &&
+             after.p2ActionSeq == 0;
+    }
+
+    function isValidP1Update(d) {
+      return d.p1X is number && d.p1X >= 0.0 && d.p1X <= 1.0 &&
+             d.p1Y is number && d.p1Y >= 0.0 && d.p1Y <= 1.0 &&
+             d.p1Facing in [-1, 1] &&
+             d.p1Action is string && d.p1Action.size() >= 1 && d.p1Action.size() <= 30 &&
+             d.p1ActionSeq is int && d.p1ActionSeq >= 0 &&
+             d.p1Blocking is bool &&
+             d.p1Ulti is int && d.p1Ulti >= 0 && d.p1Ulti <= 100 &&
+             d.p1DealtDmg is int && d.p1DealtDmg >= 0 && d.p1DealtDmg <= 5000;
+    }
+
+    function isValidP2Update(d) {
+      return d.p2X is number && d.p2X >= 0.0 && d.p2X <= 1.0 &&
+             d.p2Y is number && d.p2Y >= 0.0 && d.p2Y <= 1.0 &&
+             d.p2Facing in [-1, 1] &&
+             d.p2Action is string && d.p2Action.size() >= 1 && d.p2Action.size() <= 30 &&
+             d.p2ActionSeq is int && d.p2ActionSeq >= 0 &&
+             d.p2Blocking is bool &&
+             d.p2Ulti is int && d.p2Ulti >= 0 && d.p2Ulti <= 100 &&
+             d.p2DealtDmg is int && d.p2DealtDmg >= 0 && d.p2DealtDmg <= 5000;
+    }
+
+    match /match_rooms/{roomId} {
+      allow get: if isSignedIn() && isValidRoomCode(roomId) && (
+        existing().status == 'waiting' ||
+        request.auth.uid in existing().participantIds ||
+        isAdmin()
+      );
+
+      allow list: if isSignedIn() && (request.auth.uid in resource.data.participantIds || isAdmin());
+
+      allow create: if isSignedIn() &&
+                       isValidRoomCode(roomId) &&
+                       incoming().roomCode == roomId &&
+                       incoming().hostId == request.auth.uid &&
+                       incoming().guestId == '' &&
+                       incoming().participantIds.size() == 1 &&
+                       incoming().participantIds[0] == request.auth.uid &&
+                       incoming().status == 'waiting' &&
+                       incoming().winnerSide == 'none' &&
+                       incoming().keys().hasAll([
+                         'roomCode', 'hostId', 'hostName', 'guestId', 'guestName', 'participantIds',
+                         'status', 'stageId', 'hostFighterId', 'guestFighterId', 'hostReady', 'guestReady',
+                         'roundNumber', 'p1RoundsWon', 'p2RoundsWon', 'winnerSide',
+                         'p1X', 'p1Y', 'p1Facing', 'p1Action', 'p1ActionSeq', 'p1Blocking', 'p1Ulti', 'p1DealtDmg',
+                         'p2X', 'p2Y', 'p2Facing', 'p2Action', 'p2ActionSeq', 'p2Blocking', 'p2Ulti', 'p2DealtDmg',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'roomCode', 'hostId', 'hostName', 'guestId', 'guestName', 'participantIds',
+                         'status', 'stageId', 'hostFighterId', 'guestFighterId', 'hostReady', 'guestReady',
+                         'roundNumber', 'p1RoundsWon', 'p2RoundsWon', 'winnerSide',
+                         'p1X', 'p1Y', 'p1Facing', 'p1Action', 'p1ActionSeq', 'p1Blocking', 'p1Ulti', 'p1DealtDmg',
+                         'p2X', 'p2Y', 'p2Facing', 'p2Action', 'p2ActionSeq', 'p2Blocking', 'p2Ulti', 'p2DealtDmg',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidMatchRoom(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidRoomCode(roomId) &&
+                       incoming().roomCode == existing().roomCode &&
+                       incoming().hostId == existing().hostId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().updatedAt is timestamp && incoming().updatedAt <= request.time &&
+                       (
+                         !(incoming().status in ['fighting', 'finished']) ||
+                         (
+                           isValidP1Update(incoming()) &&
+                           isValidP2Update(incoming()) &&
+                           incoming().winnerSide in ['none', 'p1', 'p2'] &&
+                           incoming().p1RoundsWon is int && incoming().p1RoundsWon >= 0 && incoming().p1RoundsWon <= 3 &&
+                           incoming().p2RoundsWon is int && incoming().p2RoundsWon >= 0 && incoming().p2RoundsWon <= 3
+                         )
+                       ) && (
+                         // Action 1: Guest joins a waiting room
+                         (
+                           existing().status == 'waiting' &&
+                           existing().guestId == '' &&
+                           request.auth.uid != existing().hostId &&
+                           incoming().guestId == request.auth.uid &&
+                           incoming().guestName is string && incoming().guestName.size() >= 1 && incoming().guestName.size() <= 40 &&
+                           incoming().participantIds.size() == 2 &&
+                           incoming().participantIds[0] == existing().hostId &&
+                           incoming().participantIds[1] == request.auth.uid &&
+                           incoming().status == 'selecting' &&
+                           incoming().guestReady == false &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['guestId', 'guestName', 'participantIds', 'status', 'guestReady', 'updatedAt'])
+                         ) ||
+                         // Action 2: Host selects fighter / stage / starts match in lobby
+                         (
+                           request.auth.uid == existing().hostId &&
+                           existing().status in ['waiting', 'selecting'] &&
+                           incoming().status in ['waiting', 'selecting', 'fighting'] &&
+                           incoming().hostFighterId is string && incoming().hostFighterId.size() >= 1 && incoming().hostFighterId.size() <= 40 &&
+                           incoming().stageId is string && incoming().stageId.size() >= 1 && incoming().stageId.size() <= 40 &&
+                           incoming().hostReady is bool &&
+                           (incoming().status != 'fighting' || isValidCombatReset(incoming())) &&
+                           incoming().guestId == existing().guestId &&
+                           incoming().guestName == existing().guestName &&
+                           incoming().participantIds == existing().participantIds &&
+                           incoming().guestFighterId == existing().guestFighterId &&
+                           incoming().guestReady == existing().guestReady
+                         ) ||
+                         // Action 3: Guest selects fighter / readies up in lobby
+                         (
+                           request.auth.uid == existing().guestId &&
+                           existing().status == 'selecting' &&
+                           incoming().status == 'selecting' &&
+                           incoming().guestFighterId is string && incoming().guestFighterId.size() >= 1 && incoming().guestFighterId.size() <= 40 &&
+                           incoming().guestReady is bool &&
+                           incoming().diff(existing()).affectedKeys().hasOnly(['guestFighterId', 'guestReady', 'updatedAt'])
+                         ) ||
+                         // Action 4a: Host (P1) updates P1 combat state or finishes match
+                         (
+                           request.auth.uid == existing().hostId &&
+                           existing().status == 'fighting' &&
+                           incoming().status in ['fighting', 'finished'] &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'p1X', 'p1Y', 'p1Facing', 'p1Action', 'p1ActionSeq', 'p1Blocking', 'p1Ulti', 'p1DealtDmg',
+                             'p1RoundsWon', 'p2RoundsWon', 'status', 'winnerSide', 'updatedAt'
+                           ])
+                         ) ||
+                         // Action 4b: Host advances round and resets P1/P2 combat state
+                         (
+                           request.auth.uid == existing().hostId &&
+                           existing().status == 'fighting' &&
+                           incoming().status == 'fighting' &&
+                           incoming().roundNumber == existing().roundNumber + 1 &&
+                           incoming().roundNumber <= 5 &&
+                           incoming().guestId == existing().guestId &&
+                           incoming().guestName == existing().guestName &&
+                           incoming().participantIds == existing().participantIds &&
+                           incoming().stageId == existing().stageId &&
+                           incoming().hostFighterId == existing().hostFighterId &&
+                           incoming().guestFighterId == existing().guestFighterId &&
+                           incoming().winnerSide == 'none'
+                         ) ||
+                         // Action 5: Guest (P2) updates P2 combat state
+                         (
+                           request.auth.uid == existing().guestId &&
+                           existing().status == 'fighting' &&
+                           incoming().status == 'fighting' &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'p2X', 'p2Y', 'p2Facing', 'p2Action', 'p2ActionSeq', 'p2Blocking', 'p2Ulti', 'p2DealtDmg',
+                             'updatedAt'
+                           ])
+                         ) ||
+                         // Action 6: Rematch after match finished -> return both players to character selection inside same room
+                         (
+                           request.auth.uid in existing().participantIds &&
+                           existing().status == 'finished' &&
+                           existing().guestId != '' &&
+                           incoming().status == 'selecting' &&
+                           incoming().hostReady == false &&
+                           incoming().guestReady == false &&
+                           isValidCombatReset(incoming()) &&
+                           incoming().guestId == existing().guestId &&
+                           incoming().guestName == existing().guestName &&
+                           incoming().participantIds == existing().participantIds &&
+                           incoming().stageId == existing().stageId &&
+                           incoming().hostFighterId == existing().hostFighterId &&
+                           incoming().guestFighterId == existing().guestFighterId
+                         ) ||
+                         // Action 7: Guest cleanly leaves room back to waiting state
+                         (
+                           request.auth.uid == existing().guestId &&
+                           existing().status in ['selecting', 'finished'] &&
+                           incoming().status == 'waiting' &&
+                           incoming().guestId == '' &&
+                           incoming().guestName == '' &&
+                           incoming().hostReady == false &&
+                           incoming().guestReady == false &&
+                           incoming().participantIds.size() == 1 &&
+                           incoming().participantIds[0] == existing().hostId &&
+                           incoming().diff(existing()).affectedKeys().hasOnly([
+                             'guestId', 'guestName', 'participantIds', 'status', 'hostReady', 'guestReady', 'updatedAt'
+                           ])
+                         ) ||
+                         isAdmin()
+                       );
+
+      allow delete: if isSignedIn() && isValidRoomCode(roomId) && (request.auth.uid == existing().hostId || isAdmin());
+    }
+
+    match /playtest_feedbacks/{feedbackId} {
+      allow get, list: if isSignedIn();
+
+      allow create: if isSignedIn() &&
+                       isValidId(feedbackId) &&
+                       incoming().authorId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'authorId', 'authorName', 'modeTested', 'category', 'fighterId', 'rating', 'comment', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'authorId', 'authorName', 'modeTested', 'category', 'fighterId', 'rating', 'comment', 'createdAt'
+                       ]) &&
+                       isValidFeedback(incoming());
+
+      allow update: if false;
+
+      allow delete: if isSignedIn() && isValidId(feedbackId) && (existing().authorId == request.auth.uid || isAdmin());
+    }
+  }
+}
